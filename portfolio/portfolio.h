@@ -8,19 +8,15 @@
 #include <stdexcept>
 #include "../Market/Market.h"
 
-// Portfolio module: owns the user's virtual cash, holdings, and transaction
-// history. Also contains PortfolioAnalyzer, a stateless reporting layer
-// kept separate from Portfolio itself (single-responsibility separation).
+// Portfolio module: owns the user's virtual cash, holdings and transaction
+// history. PortfolioAnalyzer is a separate, stateless reporting class.
 namespace portfolio
 {
-
-    // Thrown for portfolio-internal invariant violations (e.g. selling a
-    // position that does not exist). Trading-level validation should normally
-    // prevent these from ever being thrown; they exist as a defensive layer.
+    // Defensive error for invalid portfolio operations (e.g. selling a position that does not exist).
     class PortfolioError : public std::runtime_error
     {
     public:
-        explicit PortfolioError(const std::string &message);
+        explicit PortfolioError(const std::string &message) : std::runtime_error(message) {}
     };
 
     enum class TransactionSide
@@ -31,8 +27,7 @@ namespace portfolio
 
     std::string transactionSideToString(TransactionSide side);
 
-    // An immutable record of a completed trade. This is the permanent audit
-    // trail the rest of the system relies on (e.g. for realized P&L).
+    // Record of a completed trade: the audit trail used for realized P&L.
     struct Transaction
     {
         std::string symbol;
@@ -46,22 +41,19 @@ namespace portfolio
                     double price_, double realizedPnL_);
     };
 
-    // A single position within the portfolio: how many shares are held and at
-    // what average cost basis.
+    // One position: number of shares held and their average cost basis.
     class Holding
     {
     public:
         Holding(std::string symbol, int quantity, double avgCost);
 
-        const std::string &symbol() const;
-        int quantity() const;
-        double avgCost() const;
+        const std::string &symbol() const { return symbol_; }
+        int quantity() const { return quantity_; }
+        double avgCost() const { return avgCost_; }
 
-        // Adds shares to the position, recalculating the weighted average cost.
+        // Adds shares and recalculates the weighted average cost.
         void addShares(int qty, double price);
-
-        // Removes shares from the position. Throws std::invalid_argument if
-        // qty is not positive or exceeds the currently held quantity.
+        // Removes shares; throws std::invalid_argument if qty is invalid or exceeds holding.
         void removeShares(int qty);
 
     private:
@@ -70,41 +62,33 @@ namespace portfolio
         double avgCost_;
     };
 
-    // Owns the real, authoritative state of the user's portfolio: cash,
-    // holdings, and transaction history. Mutation only happens through
-    // controlled methods - there is no way to get a non-const handle to the
-    // holdings map from outside this class.
+    // Owns the real state: cash, holdings and history. Holdings can only be
+    // changed through applyBuy/applySell (outside code gets const access only).
     class Portfolio
     {
     public:
         explicit Portfolio(double startingCash);
 
-        double cash() const;
-        bool hasHolding(const std::string &symbol) const;
-        int holdingQuantity(const std::string &symbol) const;
-        const std::map<std::string, Holding> &holdings() const;
-        const std::vector<Transaction> &history() const;
+        double cash() const { return cash_; }
+        bool hasHolding(const std::string &symbol) const { return holdings_.count(symbol) > 0; }
+        int holdingQuantity(const std::string &symbol) const { return hasHolding(symbol) ? holdings_.at(symbol).quantity() : 0; }
+        const std::map<std::string, Holding> &holdings() const { return holdings_; }
+        const std::vector<Transaction> &history() const { return history_; }
 
-        // Applies a buy: debits cash and grows/creates the relevant holding.
+        // Debits cash and grows/creates the holding. Throws PortfolioError if cash is insufficient.
         void applyBuy(const std::string &symbol, int qty, double price);
-
-        // Applies a sell: credits cash and shrinks/removes the relevant holding.
-        // Throws PortfolioError if no such holding exists.
+        // Credits cash and shrinks/removes the holding. Throws PortfolioError if no such holding exists.
         void applySell(const std::string &symbol, int qty, double price);
 
-        void recordTransaction(const Transaction &transaction);
+        void recordTransaction(const Transaction &transaction) { history_.push_back(transaction); }
 
     private:
-        void debitCash(double amount);
-        void creditCash(double amount);
-
         double cash_;
         std::map<std::string, Holding> holdings_;
         std::vector<Transaction> history_;
     };
 
-    // One line of a holdings report, used by the UI to print a table without
-    // PortfolioAnalyzer needing to know anything about formatting or streams.
+    // One row of the holdings report (lets the UI print a table without any math).
     struct HoldingReportLine
     {
         std::string symbol;
@@ -115,9 +99,7 @@ namespace portfolio
         double unrealizedPnL;
     };
 
-    // Stateless computation layer over Portfolio + Market. Kept deliberately
-    // separate from Portfolio so that "state container" and "reporting/analysis"
-    // responsibilities do not mix.
+    // Stateless calculations over Portfolio + Market.
     class PortfolioAnalyzer
     {
     public:

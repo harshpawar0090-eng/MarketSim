@@ -2,161 +2,79 @@
 
 namespace portfolio
 {
-
-    PortfolioError::PortfolioError(const std::string &message)
-        : std::runtime_error(message) {}
-
     std::string transactionSideToString(TransactionSide side)
     {
-        switch (side)
-        {
-        case TransactionSide::Buy:
-            return "BUY";
-        case TransactionSide::Sell:
-            return "SELL";
-        }
-        return "UNKNOWN";
+        return side == TransactionSide::Buy ? "BUY" : "SELL";
     }
 
     Transaction::Transaction(std::string symbol_, TransactionSide side_, int quantity_,
                              double price_, double realizedPnL_)
-        : symbol(std::move(symbol_)),
-          side(side_),
-          quantity(quantity_),
-          price(price_),
-          realizedPnL(realizedPnL_),
-          timestamp(std::time(nullptr)) {}
+        : symbol(std::move(symbol_)), side(side_), quantity(quantity_), price(price_),
+          realizedPnL(realizedPnL_), timestamp(std::time(nullptr)) {}
 
     Holding::Holding(std::string symbol, int quantity, double avgCost)
         : symbol_(std::move(symbol)), quantity_(quantity), avgCost_(avgCost)
     {
         if (quantity_ <= 0)
-        {
             throw std::invalid_argument("Holding must start with a positive quantity: " + symbol_);
-        }
         if (avgCost_ < 0.0)
-        {
             throw std::invalid_argument("Holding average cost cannot be negative: " + symbol_);
-        }
     }
-
-    const std::string &Holding::symbol() const { return symbol_; }
-    int Holding::quantity() const { return quantity_; }
-    double Holding::avgCost() const { return avgCost_; }
 
     void Holding::addShares(int qty, double price)
     {
         if (qty <= 0)
-        {
             throw std::invalid_argument("Quantity to add must be positive");
-        }
-        double totalCostBefore = avgCost_ * quantity_;
-        double totalCostAdded = price * qty;
+        avgCost_ = (avgCost_ * quantity_ + price * qty) / (quantity_ + qty); // weighted average
         quantity_ += qty;
-        avgCost_ = (totalCostBefore + totalCostAdded) / quantity_;
     }
 
     void Holding::removeShares(int qty)
     {
         if (qty <= 0)
-        {
             throw std::invalid_argument("Quantity to remove must be positive");
-        }
         if (qty > quantity_)
-        {
             throw std::invalid_argument("Cannot remove more shares than are held: " + symbol_);
-        }
-        quantity_ -= qty;
-        // Average cost basis does not change when only some shares are sold.
+        quantity_ -= qty; // average cost does not change on a sale
     }
 
     Portfolio::Portfolio(double startingCash) : cash_(startingCash)
     {
         if (cash_ < 0.0)
-        {
             throw std::invalid_argument("Starting cash cannot be negative");
-        }
-    }
-
-    double Portfolio::cash() const { return cash_; }
-
-    bool Portfolio::hasHolding(const std::string &symbol) const
-    {
-        return holdings_.find(symbol) != holdings_.end();
-    }
-
-    int Portfolio::holdingQuantity(const std::string &symbol) const
-    {
-        auto it = holdings_.find(symbol);
-        if (it == holdings_.end())
-        {
-            return 0;
-        }
-        return it->second.quantity();
-    }
-
-    const std::map<std::string, Holding> &Portfolio::holdings() const { return holdings_; }
-    const std::vector<Transaction> &Portfolio::history() const { return history_; }
-
-    void Portfolio::debitCash(double amount)
-    {
-        if (amount > cash_)
-        {
-            throw PortfolioError("Insufficient cash for this operation");
-        }
-        cash_ -= amount;
-    }
-
-    void Portfolio::creditCash(double amount)
-    {
-        cash_ += amount;
     }
 
     void Portfolio::applyBuy(const std::string &symbol, int qty, double price)
     {
         double cost = price * qty;
-        debitCash(cost);
+        if (cost > cash_)
+            throw PortfolioError("Insufficient cash for this operation");
+        cash_ -= cost;
 
         auto it = holdings_.find(symbol);
         if (it != holdings_.end())
-        {
             it->second.addShares(qty, price);
-        }
         else
-        {
             holdings_.emplace(symbol, Holding(symbol, qty, price));
-        }
     }
 
     void Portfolio::applySell(const std::string &symbol, int qty, double price)
     {
         auto it = holdings_.find(symbol);
         if (it == holdings_.end())
-        {
             throw PortfolioError("No holding found for symbol: " + symbol);
-        }
 
         it->second.removeShares(qty);
-        creditCash(price * qty);
-
+        cash_ += price * qty;
         if (it->second.quantity() == 0)
-        {
             holdings_.erase(it);
-        }
-    }
-
-    void Portfolio::recordTransaction(const Transaction &transaction)
-    {
-        history_.push_back(transaction);
     }
 
     double PortfolioAnalyzer::totalMarketValue(const Portfolio &p, const market::Market &mkt)
     {
         double total = 0.0;
         for (const auto &[symbol, holding] : p.holdings())
-        {
             total += holding.quantity() * mkt.getStock(symbol).price();
-        }
         return total;
     }
 
@@ -164,23 +82,16 @@ namespace portfolio
     {
         double total = 0.0;
         for (const auto &[symbol, holding] : p.holdings())
-        {
-            double currentPrice = mkt.getStock(symbol).price();
-            total += (currentPrice - holding.avgCost()) * holding.quantity();
-        }
+            total += (mkt.getStock(symbol).price() - holding.avgCost()) * holding.quantity();
         return total;
     }
 
     double PortfolioAnalyzer::totalRealizedPnL(const Portfolio &p)
     {
         double total = 0.0;
-        for (const auto &transaction : p.history())
-        {
-            if (transaction.side == TransactionSide::Sell)
-            {
-                total += transaction.realizedPnL;
-            }
-        }
+        for (const auto &t : p.history())
+            if (t.side == TransactionSide::Sell)
+                total += t.realizedPnL;
         return total;
     }
 
@@ -197,18 +108,11 @@ namespace portfolio
         for (const auto &[symbol, holding] : p.holdings())
         {
             const market::Stock &stock = mkt.getStock(symbol);
-            double value = holding.quantity() * stock.price();
-            valueBySector[stock.sector()] += value;
+            valueBySector[stock.sector()] += holding.quantity() * stock.price();
         }
-
         if (total > 0.0)
-        {
             for (auto &[sector, value] : valueBySector)
-            {
-                value = (value / total) * 100.0;
-            }
-        }
-
+                value = (value / total) * 100.0; // convert to percent of holdings value
         return valueBySector;
     }
 
@@ -217,18 +121,9 @@ namespace portfolio
         std::vector<HoldingReportLine> lines;
         for (const auto &[symbol, holding] : p.holdings())
         {
-            double currentPrice = mkt.getStock(symbol).price();
-            double marketValue = currentPrice * holding.quantity();
-            double unrealizedPnL = (currentPrice - holding.avgCost()) * holding.quantity();
-
-            HoldingReportLine line;
-            line.symbol = symbol;
-            line.quantity = holding.quantity();
-            line.avgCost = holding.avgCost();
-            line.currentPrice = currentPrice;
-            line.marketValue = marketValue;
-            line.unrealizedPnL = unrealizedPnL;
-            lines.push_back(line);
+            double price = mkt.getStock(symbol).price();
+            lines.push_back({symbol, holding.quantity(), holding.avgCost(), price,
+                             price * holding.quantity(), (price - holding.avgCost()) * holding.quantity()});
         }
         return lines;
     }
