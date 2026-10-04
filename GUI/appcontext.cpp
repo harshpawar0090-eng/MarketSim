@@ -68,4 +68,17 @@ namespace gui
         emit tickAdvanced(summary);
     }
 
+    void AppContext::notifyAccountChanged()
+    {
+        try
+        {
+            intelligence_.recordSnapshot();
+        }
+        catch (const std::exception &)
+        {
+            // A failed snapshot must never block the UI refresh below.
+        }
+        emit stateChanged();
+    }
+
 } // namespace gui

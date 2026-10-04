@@ -16,6 +16,7 @@
 #include <exception>
 #include <string>
 
+#include "ChartWidgets.h"
 #include "Format.h"
 
 namespace gui
@@ -44,6 +45,14 @@ namespace gui
         combo_->setMinimumWidth(140);
         selector->addWidget(selectorLabel);
         selector->addWidget(combo_);
+        selector->addSpacing(16);
+        auto *styleLabel = new QLabel(QStringLiteral("Chart:"), this);
+        styleLabel->setObjectName(QStringLiteral("mutedLabel"));
+        chartStyle_ = new QComboBox(this);
+        chartStyle_->addItem(QStringLiteral("Candlesticks"));
+        chartStyle_->addItem(QStringLiteral("Line"));
+        selector->addWidget(styleLabel);
+        selector->addWidget(chartStyle_);
         selector->addStretch(1);
         root->addLayout(selector);
 
@@ -101,10 +110,22 @@ namespace gui
         history_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
         historyLayout->addWidget(history_, 1);
 
+        // ---- chart box ----
+        auto *chartBox = new QGroupBox(QStringLiteral("Price chart (live market history)"), this);
+        auto *chartLayout = new QVBoxLayout(chartBox);
+        chart_ = new PriceChartWidget(chartBox);
+        chart_->setEmptyText(QStringLiteral("No price history yet - advance the market to record bars."));
+        chartLayout->addWidget(chart_);
+
+        auto *rightColumn = new QVBoxLayout();
+        rightColumn->setSpacing(12);
+        rightColumn->addWidget(chartBox, 3);
+        rightColumn->addWidget(historyBox, 2);
+
         auto *columns = new QHBoxLayout();
         columns->setSpacing(12);
         columns->addWidget(quoteBox, 1);
-        columns->addWidget(historyBox, 2);
+        columns->addLayout(rightColumn, 2);
         root->addLayout(columns, 1);
 
         // ---- populate the selector from the real instruments ----
@@ -116,6 +137,8 @@ namespace gui
         combo_->blockSignals(false);
 
         connect(combo_, &QComboBox::currentTextChanged, this, [this](const QString &)
+                { refresh(); });
+        connect(chartStyle_, &QComboBox::currentIndexChanged, this, [this](int)
                 { refresh(); });
         connect(&context_, &AppContext::stateChanged, this, &StockDetailPage::refresh);
 
@@ -177,6 +200,17 @@ namespace gui
 
             const std::deque<market::OhlcBar> &bars = mkt.priceHistory(symbol);
             barsValue_->setText(fmt::integer(static_cast<long long>(bars.size())));
+
+            QVector<ChartBar> chartBars;
+            chartBars.reserve(static_cast<int>(bars.size()));
+            for (const market::OhlcBar &b : bars)
+            {
+                chartBars.push_back(ChartBar{static_cast<qint64>(b.timestamp), b.open, b.high, b.low, b.close,
+                                             static_cast<qlonglong>(b.volume)});
+            }
+            chart_->setStyle(chartStyle_->currentIndex() == 0 ? PriceChartWidget::Style::Candles
+                                                              : PriceChartWidget::Style::Line);
+            chart_->setBars(chartBars);
 
             // Most recent 10 bars, newest first.
             const std::size_t shown = std::min<std::size_t>(bars.size(), 10);

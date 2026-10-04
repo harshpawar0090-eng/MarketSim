@@ -19,7 +19,19 @@ endif()
 # console app and the GUI. (Add Historical / Backtest here when the GUI needs
 # them in Phase 5B.3.)
 # ---------------------------------------------------------------------------
-set(MARKETSIM_CORE_DIRS Market Trading Portfolio Simulation Execution Broker Risk Analytics App)
+set(MARKETSIM_CORE_DIRS
+    Market
+    Trading
+    Portfolio
+    Simulation
+    Execution
+    Broker
+    Risk
+    Analytics
+    Historical
+    Backtest
+    App
+)
 set(MARKETSIM_CORE_SOURCES "")
 foreach(dir IN LISTS MARKETSIM_CORE_DIRS)
     file(GLOB dir_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${dir}/*.cpp")

@@ -12,9 +12,10 @@ class QTableWidget;
 
 namespace gui
 {
+    class PriceChartWidget;
 
     // Read-only detail view for one instrument: quote, bid/ask, volume,
-    // turnover and the recorded OHLC history (table only - charts come later).
+    // turnover, a price/volume chart and the recorded OHLC history table.
     class StockDetailPage : public QWidget
     {
         Q_OBJECT
@@ -32,6 +33,8 @@ namespace gui
 
         AppContext &context_;
         QComboBox *combo_ = nullptr;
+        QComboBox *chartStyle_ = nullptr;
+        PriceChartWidget *chart_ = nullptr;
 
         QLabel *heroName_ = nullptr;
         QLabel *heroPrice_ = nullptr;

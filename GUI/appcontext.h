@@ -65,6 +65,12 @@ namespace gui
     public slots:
         void advanceTick();
 
+        // Call after anything that changes the account outside a market tick
+        // (order placed/cancelled, fill, ...). Records a portfolio snapshot and
+        // emits stateChanged() so EVERY page refreshes from the same source of
+        // truth. Contains no financial logic.
+        void notifyAccountChanged();
+
     signals:
         // Emitted after any change to market/account state; pages refresh from it.
         void stateChanged();
